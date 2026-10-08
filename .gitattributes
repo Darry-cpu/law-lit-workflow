@@ -1,0 +1,11 @@
+# 二进制文件：禁止行尾转换与文本 diff，否则 PDF 会被改写而损坏
+*.pdf  binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.docx binary
+*.xlsx binary
+*.pptx binary
+*.zip  binary

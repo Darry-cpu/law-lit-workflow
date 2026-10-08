@@ -5,7 +5,7 @@ description: 法学文献端到端工作流：知网检索（CLSCI/CSSCI/北大�
 
 # 法学文献综述端到端工作流
 
-流水线 + 约束叠加的编排。主线：**检索 → 入库 → 转 MD → 精读 → 综合 → 映射 → 写作 → 引注 → Word**；
+流水线 + 约束叠加的编排。主线：**检索 → 入库 → 转 MD → 页码锚点 → 精读 → 综合 → 映射 → 写作 → 引注 → Word → 去 AI 味＋版式清理 → 交付校验**；
 `paper-orchestration` 是写作段总控，`csl-citation` / `writing-law` 是引注与文体的约束层。
 
 ## 硬参数与硬门控
@@ -16,6 +16,9 @@ description: 法学文献端到端工作流：知网检索（CLSCI/CSSCI/北大�
 - **门控 1（P0）**：brainstorming-research 的"用户未最终确认，不写任何正文"。
 - **门控 2（P6）**：`plan/evidence-map.md`（证据-论点映射）不存在，不得开始综述写作。
 - **门控 3（P7 论文线）**：paper-orchestration 的 plan 三件套（project-overview/outline/progress）与任务包不存在，不得起草章节。
+- **门控 4（P9.5）**：交付校验清单未逐项通过，不得 `present_files`。
+- **门控 5（P9.4）**：去 AI 味与版式清理**必须另存新文件**（`×××_去AI味版.*`），
+  覆盖原稿即视为流程违规——原稿是唯一的回退点，且字数与脚注在改后须重新过门控 4。
 
 ## 阶段总览
 
@@ -24,15 +27,21 @@ description: 法学文献端到端工作流：知网检索（CLSCI/CSSCI/北大�
 | P0 选题确认 | brainstorming-research（对话式，一次一问）＋ humanities-thesis 阶段零 | `plan/project-overview.md`、`plan/outline.md`、`plan/progress.md` |
 | P1 检索 | cnki-mcp ＋ 本 skill 期刊白名单 | `plan/literature-search.md`（候选表，用户筛选） |
 | P2 入库与全文 | zotero-mcp ＋ 用户 Connector/丢 PDF | Zotero 条目+附件；`plan/sources.md`（D编号↔Zotero key↔PDF路径↔MD路径） |
-| P3 转 Markdown | `tools/mdconvert.py`（项目内的 PDF→Markdown 转换脚本，可替换为等价工具） | `reading/D编号_短题名.md` |
+| P3 转 Markdown | `mdconvert.py`（系统 Python） | `reading/D编号_短题名.md` |
+| **P3.5 页码锚点** | `pdfpages.py`（**$MIMO_PYTHON**） | **`reading/paged/D编号_*.md`（精读主源）** |
 | P4 单篇精读 | paper-reading（法学适配，见下） | `reading/cards/D编号_精读卡.md` |
 | P5 综合归纳 | multi-document-summarization | `synthesis/综合摘要.md`（共识表/冲突表/洞见） |
 | P6 证据映射 | literature-review 的 evidence-claim map | `plan/evidence-map.md` |
 | P7 写作 | 综述线 / 论文线（见下） | 综述或章节 `.md` 草稿 |
 | P8 引注规范化 | csl-citation 脚本逐条校核 | 定稿 `.md` |
-| P9 产出 Word | **docx-official**（强制，管中文字体与版式） | `output/×××.docx` |
+| P9 产出 Word | **docx-official**（管中文字体与版式）＋ `md2docx.py`（管页下注） | `output/×××.docx` |
+| **P9.4 去 AI 味＋版式清理** | `legal-paper-framework-humanizer-zh` ＋ `stripbold.py` ＋ `md2docx.py` | **另存** `output/×××_去AI味版.md` / `.docx`（不覆盖原稿） |
+| **P9.5 交付校验** | `papercheck` / `citecheck` / `docxcheck` ＋ **渲染看图** | 校验通过记录 |
 
-目录约定：`plan/`、`reading/`、`reading/cards/`、`synthesis/`、`output/` 均建在当前项目/会话工作目录下。
+目录约定：`plan/`、`reading/`、`reading/paged/`、`reading/cards/`、`synthesis/`、`output/` 均建在当前项目/会话工作目录下。
+
+**断点续作**：跨会话中断时，先把 `plan/HANDOVER.md` 写全（进度表、已确认的作者决策、工具坑、各阶段产物路径），
+新会话第一件事读它，不要重跑已完成阶段。该文件是本工作流的固定产出物之一。
 
 ---
 
@@ -40,12 +49,26 @@ description: 法学文献端到端工作流：知网检索（CLSCI/CSSCI/北大�
 
 ### 步骤
 
-1. **探测式登录（P1 第一动作）**：调 cnki-mcp 的 `login`。
-   - 会话有效 → 静默继续，不打扰用户；
-   - 会话失效 / 报 "please call login before using browser tools" → **主动提醒用户**：
-     "知网登录态已失效，请在弹出的 Chrome for Testing 窗口完成机构登录，完成后告诉我"——
-     等用户确认后再继续检索；
-   - `login` 引擎侧超时 ≠ 失败（见下方工具注意事项），等 30–60 秒重试。
+1. **探测登录态（P1 第一动作）**
+
+   cnki-mcp 的浏览器会话会随时间/`logout` 失效，而**能否读到文章详情才是唯一可靠的判据**。
+   先用一次**只读**调用探路，不要一上来就反复 `login`（实测曾连调 4 次 `login` 全部超时，
+   白白占住串行队列）：
+
+   1. **探路**：调 `get-info-by-detail`（任一已知题名），按返回分流——
+      - **正常返回记录（且含摘要）→ 会话有效＋机构权限有效 → 直接进入检索，全程不要再调 `login`；**
+      - 报 `please call login before using browser tools` → **会话未初始化**：
+        **调一次 `login`**，然后等 30–60 秒重新探路。注意 `login` 可能返回
+        `{"success":true,"profile":...}`，也可能返回 `-32001 Request timed out`——
+        **两者都算初始化成功**（超时时浏览器仍会被拉起来，`Get-Process` 可见
+        "Google Chrome for Testing"），关键是探路后来能不能返回数据。
+      - 返回 `-32001` 但**信息不是** `please call login...` → 引擎/串行队列忙：
+        等 30–60 秒**直接重试探路，不要重复调 `login`**（重复调用只会加剧排队）。
+   2. **机构权限判断**：探路返回的详情**含摘要正文**即视为机构态有效；
+      若只给题名与题录、给不出摘要，或提示试用/登录 → 提示用户在 Chrome for Testing 窗口重登，
+      等确认后再检索。
+   3. 一旦探路成功，本阶段余下检索一律不再碰 `login`。
+
 2. **第一轮（白名单×核心来源）**：`advanced-search`，**检索词用 `subject`（主题字段：篇名+关键词+摘要）——
    不要用 `keywords`（作者关键词精确匹配，召回极低，实测近乎为 0）**；`year_from` 与 `year_to` **必须同时传**
    （只传 year_from 会返回空）；`source_types=["CSSCI","北大核心"]`，`sort_by=相关度`，`limit=50`。
@@ -78,11 +101,47 @@ description: 法学文献端到端工作流：知网检索（CLSCI/CSSCI/北大�
 
 ## P3 PDF → Markdown
 
+- **输入 PDF 来自 Zotero 附件路径**（`attachments[].path`，见速查「PDF 的获取、存放与读取」）——
+  不要从项目文件夹或聊天临时路径读。
 - **只用** `mdconvert.py`（项目已装，别默认 markitdown 直喂；输出必须 UTF-8，用 `-o` 不用 PowerShell `>`）。
-- 系统 Python 3.12 运行 markitdown 相关逻辑；转换后先合并断行、剔除页码再进模型。
+- **须用系统 Python 3.12 运行**（它装了 markitdown；`$MIMO_PYTHON` 没有）。转换后先合并断行、剔除页码。
 - 登记 `reading/` 路径到 `plan/sources.md`。
 
+## P3.5 页码锚点（页下注体例的前置条件，不可跳过）
+
+`mdconvert.py`（markitdown）会丢弃 PDF 的页眉页脚，成稿无法说出"这句话在第几页"——
+而中文论文的页下注体例**强制要求页码**。因此转 MD 之后必须再生成一份带印刷页码的精读主源。
+
+- 工具：**本技能自带** `<本技能目录>\scripts\pdfpages.py`
+  **须用 `$MIMO_PYTHON` 运行**（它装了 pypdf；系统 Python 没有 pypdf）。
+- 用法：`& $MIMO_PYTHON <本技能目录>\scripts\pdfpages.py 输出.md 输入.pdf --start <印刷页首页码> --expect <预期页数>`
+- 输入 PDF 同样来自 **Zotero 附件路径**（同上，见速查），不要从项目文件夹或聊天临时路径读。
+- 期刊抽印件的物理页与印刷页通常一一对应：`物理页 n → 印刷页 start + n - 1`。
+  `--expect` 用于校验该假设：**数字对不上就必须查**（实测 D06、D08 各多 1 页，查明是该期整册
+  英文摘要页，不属文章本体，引用时须忽略；而 D01、D25 末页是文章自己的英文摘要，**不能忽略**）。
+- 产出：`reading/paged/D编号_*.md`，每页以 `<!-- ===== 印刷页 N ===== -->` 分隔。
+- **精读、证据映射、写作一律以 `reading/paged/` 为主源**；`reading/*.md` 仅供交叉校字
+  （文字更连贯但无页码）。已知抽取瑕疵须回查 PDF：部分 PDF 丢阿拉伯数字（D06、D08）、
+  脚注页眉年份变乱码（D16）、双栏表格错行（D10）。
+- **页码缺补**：cnki-mcp 对《青年研究》《上海教育科研》《政治与法律》《北京行政学院学报》等
+  实测返回 `pages: null`。此时**优先让 Zotero Connector 抓取**——插件抓回的元数据往往比 cnki-mcp
+  更完整（实测 6 篇缺页码全部由此补齐）。
+
 ## P4 单篇精读（paper-reading 法学适配）
+
+> **前置（不可跳）**：必须已完成 **P3.5 页码锚点**。精读主源是 `reading/paged/D编号_*.md`，
+> 不是 `reading/D编号_*.md`——后者没有页码，用它精读出来的卡片写不了页下注。
+
+**规模化做法（10 篇以上必用，单代理串行读会撑爆上下文）**：
+
+1. 先落盘**统一的精读卡模板** `reading/cards/_模板与说明.md`，写明章节结构、页码锚点规则、
+   "找不到就写无、不得臆测"，以及逐字摘录必须能在源文件回检。
+2. **并行派子代理，每批最多 3 个**（一次批 6 个会报 `Unrecognized key: subagent_type`，
+   分批才正常）；每张卡一个子代理，提示词里点明"该篇最需要挖到的两三个问题"。
+3. 要求子代理**用脚本回检**自己的"逐字摘录 + 页码"，回报里写明校验条数与失配数
+   （实测按此要求产出的卡片 0 失配）。
+4. 卡片统一字段：题录 / 文章定位 / 结构与论证路径 / 可引用核心论点（**逐条带页码与原文摘录**）/
+   关键概念原文 / 与本文论证主线的对接 / 冲突与需回应处 / 使用注意 / 可引原句备选。
 
 总原则照 paper-reading：**一句话核心贡献 + 忠实原文、若无则说明、禁止臆测**（与 humanities-thesis R1–R3 同向）。
 维度映射（覆盖原 9 维中的两维）：
@@ -97,11 +156,24 @@ description: 法学文献端到端工作流：知网检索（CLSCI/CSSCI/北大�
 按其模板产出：文档清单（D 编号）→ 共识表 → 冲突表（只标不判真伪）→ 跨文档洞见 → 信息缺口。
 法学论文组默认为**平行关系→主题聚合框架**；若按时间/观点对立可换框架。
 
+**规模化做法**：12 张精读卡直接串起来读会撑爆上下文（实测压成摘要档仍 226KB）。正确做法是**再派子代理分组压缩**：
+每组 3–4 张卡，按"主张 ｜页码:第N页｜可引短句（≤25字）"压成紧凑证据行，写入
+`synthesis/evidence-rows-G*.md`，再由主代理合并成 evidence-map。
+（可选辅助：`& $MIMO_PYTHON <本技能目录>\scripts\carddigest.py 卡片目录 -o 输出.md --sections 0,3,5,6`
+可先按章节抽取出精读卡的核心节，用于自查字段是否齐备；但抽出来的量仍大，
+**不要直接读进上下文当综合底料**。）
+
 ## P6 证据映射（literature-review 硬门控）
 
 从精读卡与综合摘要提炼 `plan/evidence-map.md`，字段照 literature-review：
 `Source ID | Citation | 核心发现 | 可用事实 | 支撑论点(可写进正文的一句话) | 引用位置citation slot | 风险`。
 要求：每个核心论点 ≥1 条强支撑；研究空白须 ≥2 条文献共同支撑。**无此表不写综述。**
+
+**本机实践补充（建议照抄）**：evidence-map 按**章节分节**组织，每条标三种状态——
+`【有据】`（有文献页码支撑，可加脚注）、`【推演】`（本文自己的论证，**不得伪装成有出处**，不加脚注）、
+`【争议】`（文献立场不同，须并列）。另附三张附表：①引用池规则（哪些文献页码齐备可用、哪些禁用）；
+②引用前须回查原刊的清单（乱码/丢数字/转引数据）；③**措辞禁令清单**（如"不得声称既有系统评价已指出
+某缺口"——写作时逐条复查，避免审稿人对照原文即反驳）。
 
 ## P7 写作（两条线）
 
@@ -113,19 +185,109 @@ description: 法学文献端到端工作流：知网检索（CLSCI/CSSCI/北大�
 ### 线 B：整篇论文
 1. paper-orchestration 总控：先做 Stage Detection（法学论文常见 S0→S1→S4→S5；S3 实验段映射为案例/实证材料准备）；
    plan 三件套 + 每章任务包落盘；整稿起草须按其 Multi-Agent Chapter Gate 分派子代理，单代理降级须先问用户。
+   **续作场景（已有 outline 与 HANDOVER 时）可跳过 S0，但须先读 HANDOVER 并复述已完成决策。**
 2. S0 用 brainstorming-research（其 HARD GATE 优先：未获最终确认不建 chapters、不写正文）。
 3. 文体结构用 writing-law（问题导向/规范分析/案例研究/比较法四种结构任选）、
    论证递进与理论落地用 humanities-thesis 方法论原则。
+4. **去 AI 味不在本步做**：统一延后到 **P9.4** 执行（那里连同 Word 版式清理一起做，
+   并要求另存新文件、改完重跑 P9.5）。本步只负责把正文与论证写完整。
 
 ## P8 引注规范化（csl-citation）
 
 - 逐条调 `csl-citation` skill 的 `scripts/generate_citation.py` 校核/生成脚注（《法学引注手册》第二版）。
 - 支持句柄：`作者：《篇名》，载《刊名》YYYY年第N期，第M页。`、法条、案号、英文文献等。
+- **体例冲突裁决**（详见文末"冲突裁决"第 5 条）：用户给定投稿期刊体例时，**期刊体例覆盖本节默认规则**；
+  期刊体例的自创规则（不得略写、重复上限、注号位置、集刊著录）须配 `citecheck.py` 逐项校验。
 
-## P9 产出 Word（docx-official 强制）
+## P9 产出 Word
 
-- 生成 `.docx` 前**必须加载 docx-official skill** 并遵循其东亚字体槽与版式惯例；不得手搓 python-docx。
+- 加载 **docx-official** 获取中文字体槽、版式与页边距惯例。
+- **注意：python-docx 与 docx-official 均不支持脚注。** 凡要求"页下注／真脚注"，
+  必须用**本技能自带** `<本技能目录>\scripts\md2docx.py` 注入 `word/footnotes.xml`
+  ——需同时改 `[Content_Types].xml`、`word/_rels/document.xml.rels`、正文 `w:footnoteReference`，
+  **四者缺一 Word 会报"内容有问题"或把脚注整段吞掉**。
+  此处"不得手搓 python-docx"的本意是**不要用它从零造版式**（版式仍交 docx-official 的惯例），
+  **不是禁止注入脚注部件**；注入脚注是满足页下注要求的唯一路径。
+- 生成后必跑 `docxcheck.py`（核四要件与条目数）。
 - 成品放 `output/`，用 `present_files` 呈现（声明其依赖的 `.md` 源为 related_files）。
+
+## P9.4 去 AI 味与 Word 版式清理（最后一次内容修改）
+
+**位置**：P7 写完、P8 引注定稿、P9 出 Word 之后；**P9.5 之前**。
+P9.5 之所以排在它后面，是因为去 AI 味会改动字数与措辞、格式清理会改动加粗——
+改完不重验等于没验。**本步改完必须重跑 P9.5 全部五项。**
+
+**文件规则（硬性）**：**另存新文件，不得覆盖原稿**（如 `×××_去AI味版.md` / `×××_去AI味版.docx`）。
+去 AI 味属于编辑性改动，作者未必认可改后的版本；覆盖原稿将无法回退。
+
+### 任务一：去 AI 味（加载 `legal-paper-framework-humanizer-zh`）
+
+按该技能的四层诊断处理，**改动只落编辑性判断，不动实体法内容**（该技能 §0 的三种内容区分）：
+
+| 层 | 本次实测要清什么 | 处理 |
+|---|---|---|
+| 论证层（最重） | 模糊归因 25 处：「有学者」8、「有研究」16、「学界」1 | **全部点名作者**（如"陈永峰、张艾嘉指出"），读者才可核验立场 |
+| 术语层 | 工程词：接口 2、前端／后端／中端 13、落地 2、抓手 1、链条 1；路径 7→3、机制 15→9 | 换为法律术语（程序衔接／报告前的制度准备／落实／着力之处／程序接不上／方案） |
+| 标题层 | 段内小标题与章题带工程隐喻 | 如"前端补足／中端贯通／后端定责"→"报告前的制度准备／报告后的程序衔接／未报告责任的细化与报告人保护" |
+| 结构层 | 机械同构标题 | 仅在该技能 §2.5.2 的两项独立机械证据同时成立时才改结构；否则 `retain_structure=true` |
+
+**必须保留**（该技能硬性保护）：「问题的提出」「结论」等规范标题；「构成要件」「证明责任」等精确术语；
+「争点」不得机械改为「争议」；语义不变量——**不得新增主体、义务、要件、抗辩、救济、程序或法律后果**。
+
+**交付报告三栏**（照该技能 §2.5 第 4 点）：①保留的规范用语；②替换的禁用项／AI 表达；
+③未修改的准确术语及理由；另附一行「语义不变量记录」。
+
+### 任务二：Word 版式清理（本步独有，两个缺陷只能这样查）
+
+| 缺陷 | 允许的范围 | 怎么修 |
+|---|---|---|
+| **正文不该加粗而加粗** | 仅文题、章／节标题（黑体）、`摘要：`／`关键词：` 两个标签可加粗 | 正文一律不加粗。**段内小标题（「其一，…」「在规范层面，…」）也属正文，同样不加粗** → 跑 `scripts\stripbold.py`（自动保留那两个标签），再重跑 `md2docx.py` |
+| **标题标蓝** | 章／节标题须为**黑色** | python-docx 默认 Heading 样式带主题蓝；`md2docx.py` 已内置 `RGBColor(0,0,0)`。手工用 WPS／Word 改过文档后若标题变蓝，**回脚本重出，不要手工逐条改** |
+| `**` 被当字面字符打印 | — | Markdown 里写了 `**…**` 而转换未解析时会原样打出。**改稿不要在正文随手加 `**`**；已加的先跑 `stripbold.py` |
+
+**验收方式唯一可靠的是渲染看图**：转 PDF → `pypdfium2_cli render` → Read 逐页看。
+上述三类**纯文本检查看不出来**——本次实测的三处缺陷（`**` 字面、标题蓝色、脚注跑到文末）全部靠看图才发现。
+
+### 本步完成判据
+
+1. 新版 `.md` 与 `.docx` 已另存，原稿未被改动（比对时间戳与脚注条数）；
+2. 加粗与标蓝已清理并渲染复核通过；
+3. 去 AI 味三栏报告＋语义不变量记录已交付；
+4. **P9.5 五项已全部重跑通过**（字数、摘要、关键词、脚注闭环会因本步而变化）。
+
+## P9.5 交付前机械校验（硬门控 4）
+
+**实测中暴露的全部真实缺陷，没有一个是靠读文字发现的——全是脚本或渲染看图查出来的。**
+交付前逐项过，缺一不可：
+
+| 校验 | 命令（均在 `$MIMO_PYTHON` 下可跑） | 通过标准 |
+|---|---|---|
+| 字数／摘要／关键词／脚注闭环 | `papercheck.py 正文.md` | 汉字数在硬性区间；摘要 ≤300 字；关键词 3–5 个；脚注编号连续、无孤立定义 |
+| 引注体例 | `citecheck.py 正文.md` | 无略写；每篇文献 ≤3 次；注号紧接引号；页码用短横线；外籍作者已标国别 |
+| 正文不得加粗 | `docxcheck.py 文档.docx` ＋ 加粗统计 | 仅文题、章/节标题、「摘要：」「关键词：」标签加粗 |
+| 脚注是真页下注 | `docxcheck.py 文档.docx` | footnotes.xml 条目数 = 正文引用数；Content_Types 与 rels 均已声明 |
+| **渲染看图（必做）** | 转 PDF → `pypdfium2_cli render` → Read 逐页看 | 脚注在页面底部；标题黑色非主题蓝；**`**` 未被当字面字符打印**；无乱码/空段 |
+
+> **三处视觉缺陷只能靠看图发现**（实测）：正文 `**` 被渲染成字面字符、标题被渲染成主题蓝色、
+> 脚注跑到文末而非页底。**不渲染就等于没验收。**
+
+## 技能自检（安装后先跑一遍）
+
+`tests\skilltest.py` 是本技能的自检脚本：**6 项安装完整性 ＋ 2 项运行时探测 ＋ 11 项端到端冒烟 ＝ 19 项**，
+**完全自包含**——使用 `tests\assets\` 下自带的样例 PDF／最小成稿／精读卡，**不依赖任何外部项目、不联网**。
+装完先跑，**任何 FAIL 都不要带病开跑正文流程**。
+
+- 运行：`& $MIMO_PYTHON <本技能目录>\tests\skilltest.py`
+  脚本会自己探测哪个解释器有 `pypdf＋python-docx`、哪个有 `markitdown`，
+  **不需要改任何路径**。
+- **缺依赖时的表现（已用屏蔽 PATH 的方式实测过两种场景）**：自检会**分别**指出缺的是
+  `pypdf＋python-docx`（影响 P3.5 与 docx 组脚本）还是 `markitdown`（影响 P3），
+  并给出 pip 安装命令、"两个运行时可分开"的说明，以及"缺脚本不等于流程不能跑，
+  但**不得跳过 P3.5 与 P9.5 两个门控**"的降级规则；结果行会如实区分「失败」与「未执行」。
+  **报错可照做，不会只说一句"缺依赖"。**
+- 自检**不含网络检索**：P1 的探路须单独验证——
+  `get-info-by-detail` 能返回含摘要的题录即视为通过（见 P1 第 1 步）。
+- 无网络、无 Zotero 时也能跑（冒烟段全部使用样例夹具）。
 
 ---
 
@@ -136,19 +298,116 @@ description: 法学文献端到端工作流：知网检索（CLSCI/CSSCI/北大�
    该 skill 只取其整理方法、evidence-claim map 与综述结构。
 3. **流程门控**：paper-orchestration 管阶段与任务包；brainstorming-research 管起点确认；互不覆盖。
 4. **精读框架**：paper-reading 9 维经上述法学适配后使用；忠实原文原则两处同向，无冲突。
+5. **投稿期刊体例**（用户提供的《中文引注规则》类文件）**优先级最高，覆盖第 1 条**。
+   期刊体例常含通用手册没有的自创规则，须纳入 `citecheck.py` 校验，典型有：投稿不得用略写（前注X）、
+   同一文献重复引用原则上不超过 3 次、非直引加"参见"而直引不加、句中字词直引的注号紧接引号并置于
+   标点之前、集刊须标主编与出版社与年份、外籍作者姓名前加方括号国籍。**默认规则与期刊体例冲突时，一律听期刊的。**
 
 ## 工具注意事项速查
 
-- **cnki-mcp**：先 `login`；限速 1 次/秒、每日 1000 配额；`source_types` 枚举只有
-  AMI/CSCD/CSSCI/EI/SCI/WJCI/北大核心（**没有 CLSCI**，故白名单必须客户端过滤）；单篇详情用 `get-info-from-url`。
-  **login/检索报引擎侧 `Request timed out` 时不要重开会话**：服务端会继续执行（浏览器窗口照常弹出并完成机构登录，
-  用 `Get-Process` 看 "Google Chrome for Testing" 窗口标题确认进度），等 30–60 秒直接重试检索即可；
-  首个 login 调用可能占住串行队列，连续超时属排队现象。**`keywords` 参数弃用**（见 P1 第 2 步）。
-- **zotero-mcp**：工具名带 `zotero-mcp_` 前缀；**Zotero 必须开着**（关掉则调用报 fetch failed，重开约 2 秒恢复，
-  无需重启引擎）；`add_by_identifier` 不认知网链接（用 write_item 建条目）；本地 PDF 用
-  `write_item action=import + filePath` 挂附件。
-- **PDF 全文获取**：知网无下载接口，走方案 A 半自动——**必须由用户在自己的浏览器（Edge）下载**
-  （Chrome for Testing 实测无法打开知网下载界面、无法装 Zotero Connector，别尝试）。
-  因此存在"用户 Edge 登录知网 ↔ 检索浏览器登录态"互踢风险：靠 P1 的**探测式登录提醒**兜底，
-  掉线时请用户在 Chrome for Testing 窗口重登即可；下载好的 PDF 交我用 `write_item action=import` 挂附件。
-- **csl-citation 脚本**：`python <csl-citation skill目录>/scripts/generate_citation.py "文献描述"`。
+### Python 运行时对照（换命令前先 `import` 探测，别默认同一个 Python）
+
+| 用途 | 用哪个 | 说明 |
+|---|---|---|
+| `mdconvert.py`（转 MD） | **系统 Python 3.12** | 有 markitdown；`$MIMO_PYTHON` 无 markitdown |
+| `pdfpages.py` / `md2docx.py` / `docxcheck.py` / `papercheck.py` / `citecheck.py` / `fixquotes.py` / `stripbold.py` / `carddigest.py` | **`$MIMO_PYTHON`** | 有 pypdf、python-docx、lxml；系统 Python 无 pypdf |
+| `csl-citation` 脚本 | 按其 SKILL.md 指定 | — |
+
+**探测法**：`python -c "import markitdown"` / `& $MIMO_PYTHON -c "import pypdf"`，报 ModuleNotFoundError 即换另一个。
+
+### 本技能自带脚本（随 skill 分发于 `<本技能目录>\scripts\`）
+
+> **权威版本就是 `scripts\` 下这份。** 若你在别处（例如自己的工具目录）也保留了一份同名副本，
+> 两处并存时以 `scripts\` 为准；在另一处改动后须手工同步回来，否则会分叉。
+
+| 脚本 | 用途 | 运行时 |
+|---|---|---|
+| `mdconvert.py` | PDF/Office → Markdown（强制 UTF-8，自动合并断行、剔除纯页码行） | **系统 Python 3.12** |
+| `pdfpages.py` | 按物理页切分并标注印刷页码，产出精读主源（P3.5 门控） | `$MIMO_PYTHON` |
+| `papercheck.py` | 校验正文汉字数、摘要长度、关键词个数、脚注编号闭环 | `$MIMO_PYTHON` |
+| `citecheck.py` | 按期刊引注体例校验：略写、重复次数、参见、注号位置、页码符号、国籍标注 | `$MIMO_PYTHON` |
+| `docxcheck.py` | 校验 docx 脚注四要件与条目数（是否为真页下注） | `$MIMO_PYTHON` |
+| `md2docx.py` | Markdown → 带**真页下注**的 docx（注入 footnotes.xml 四要件） | `$MIMO_PYTHON` |
+| `fixquotes.py` | 半角引号成对转全角；遇奇数个（未配对）时拒绝写入并报告行号 | `$MIMO_PYTHON` |
+| `stripbold.py` | 去除正文 `**…**` 加粗，自动保留「摘要：」「关键词：」 | `$MIMO_PYTHON` |
+| `carddigest.py` | 按章节抽取精读卡指定节（自查字段齐备性用，**不当综合底料**） | `$MIMO_PYTHON` |
+
+**脚本缺失时的降级规则**：安装包不完整、`scripts\` 目录找不到时，**按本 SKILL.md 对应阶段的文字步骤手工执行**，
+不得因为缺脚本就跳过 **P3.5 页码锚点**或 **P9.5 交付校验**这两个门控；
+同时应明确提示用户"该技能的脚本未随包安装，建议重新安装后再跑完整流程"。
+
+### docx → PDF 渲染（两条路径）
+
+1. 首选 LibreOffice：`& $MIMO_SOFFICE --headless --norestore "-env:UserInstallation=file:///<唯一临时目录>" --convert-to pdf --outdir <目录> <文件>`。
+   **注意：本机该运行时可能启动失败**（退出码 0xC0000142 或 0xC000007B，DLL 初始化错误）。
+2. **备用且实测可用：WPS COM**
+   ```powershell
+   $wps = New-Object -ComObject KWPS.Application; $wps.Visible = $false
+   $d = $wps.Documents.Open($docx路径, $false, $true)
+   $d.ExportAsFixedFormat($pdf路径, 17)   # 17 = wdExportFormatPDF
+   $d.Close(0); $wps.Quit()
+   ```
+   转完用 `& $env:MIMO_PYTHON -m pypdfium2_cli render <pdf> --output <目录> --format png --scale 2` 出图。
+3. **pandoc 不可用**（本机未安装），别依赖它做 Markdown→Word。
+
+### cnki-mcp
+
+- **先按 P1 第 1 步"探测登录态"**：探路用 `get-info-by-detail`；只有它报
+  `please call login...` 才调 `login`（可能成功、也可能 `-32001` 超时，**两者都算初始化成功**）。
+  探路一旦成功，本阶段余下检索不要再碰 `login`。限速 1 次/秒、每日 1000 配额。
+- `source_types` 枚举只有 AMI/CSCD/CSSCI/EI/SCI/WJCI/北大核心（**没有 CLSCI**，故白名单必须客户端过滤）。
+- 单篇详情：题名精确 → `get-info-by-detail`（返回题录＋摘要＋DOI，最好用）；已知 URL → `get-info-from-url`。
+  **`get-info-by-detail` 返回空数组时，截短题名重查**（完整副标题常匹配不上）。
+- **一次只发一个 cnki 调用**：与其他 cnki 调用并列时，**若其中任何一个失败，同批次全部被取消**；
+  也不要与其他 MCP 调用混在同一批次。
+- **`search-issn`、`list-journal` 同样需要会话**——实测未初始化时它们也返回
+  `please call login...`，**不能当"本地表探活"用**；探路只用 `get-info-by-detail`。
+  **集刊（如《刑法论丛》）不要走 `list-journal`**：其 ISSN 常是伪号（`1998-2026` 之类），
+  报 `Journal not found`；主编与出版社须由作者提供或查纸质版。
+- **报 `Request timed out` 时不要重开会话**：等 30–60 秒重探即可；首个调用会占住串行队列，
+  连续超时多属排队现象，此时**重复调 `login` 只会加剧排队**。
+- **`keywords` 参数弃用**（见 P1 第 2 步）。
+
+### zotero-mcp
+
+- 工具名带 `zotero-mcp_` 前缀；**Zotero 必须开着**（关掉则调用报 fetch failed，重开约 2 秒恢复，无需重启引擎）。
+- `add_by_identifier` 不认知网链接（用 `write_item` 建条目）；本地 PDF 用 `write_item action=import + filePath` 挂附件。
+- **Connector 会新建条目**：若先手工 `write_item` 建了条目、用户再用 Zotero Connector 下载 PDF，
+  **插件会另建一套重复条目**。两种正确做法（择一）：①只用 Connector（让插件建条目并抓元数据，
+  元数据通常比手工更全，**含 cnki-mcp 给不出的页码**）；②手工建条目后，**下载前明确告知用户不会产生重复**，
+  下载后立刻查重并把 PDF 重新挂到手工条目、清掉重复项。
+- 建条目后把 itemKey 登记进 `plan/sources.md`；集合用 `create_collection` + `add_items_to_collection`。
+
+### PDF 的获取、存放与读取（唯一权威位置＝Zotero 文件库）
+
+- **作者规则（2026-10-08 确认）：整个工作流全程只从 Zotero 文件库读取 PDF；
+  不得把 PDF 复制进项目文件夹**（`reading\pdf\` 之类的副本一律不要）。
+  项目里只保留**派生物**：`reading\*.md`（转 MD）与 `reading\paged\*.md`（页码锚点）。
+- **任何来源的 PDF（Connector 下载／用户交回／聊天临时补给），到手第一件事是挂进 Zotero 对应条目**：
+  `zotero-mcp_write_item action=import + parentItemKey + filePath`，
+  然后**立即用 `zotero-mcp_get_item_details` 回查 `attachments[].path`**——
+  之后 P3／P3.5 一律从这个路径读 PDF。
+  实测教训：D15 的全文 PDF 由用户聊天临时补给，当时没挂 Zotero、只在临时路径用了一次，
+  文件被清理后即告丢失。
+- **找 PDF 先查 Zotero**：`zotero-mcp_search_library` 定位条目 → `attachments[].path` 给出绝对路径。
+  **不要猜文件夹，也不要去聊天临时路径找**——按作者规则，那里不是存放位置。
+- **工作流完成后的修改**：由操作者自己另行提供文件（放哪里由操作者指定），工作流不主动复制或移动。
+- 获取渠道：首选 Zotero Connector 下载（元数据更全、能补齐 cnki-mcp 给不出的页码），
+  其次由用户在浏览器下载后交回或聊天补给；Chrome for Testing 实测无法打开知网下载界面、
+  无法装 Connector，别尝试。
+- 存在"用户浏览器登录知网 ↔ 检索浏览器登录态"互踢风险：靠 P1 的**探测登录提醒**兜底。
+
+### 文件与渲染的常见坑
+
+- **不要在正文 Markdown 里随手写 `**…**`**：`md2docx.py` 会渲染成加粗，交付前想全部去掉跑 `stripbold.py`
+  （自动保留「摘要：」「关键词：」两个标签）。
+- **文件被 WPS/预览面板占用**会 `PermissionError`：先查 `Get-Process wps/winword`，等用户关掉再写，
+  不要覆盖用户已打开编辑的内容；另存副本或等锁释放。
+- PowerShell 读 UTF-8 文件用 `Get-Content -Encoding UTF8`，**别用裸 `Get-Content`（GBK 会乱码、行数不可信）**；
+  也不要写 Python 输出到文件时用 `>`（会 UTF-16）。
+- 换行后脚本路径带中文时，`python -c "...中文..."` 容易触发 PowerShell parser error，**改写成脚本文件再跑**。
+
+### csl-citation 脚本
+
+- `python <csl-citation skill目录>/scripts/generate_citation.py "文献描述"`。
+- 已有成批脚注时优先用 `citecheck.py` 做整体校验，而非逐条调它。
