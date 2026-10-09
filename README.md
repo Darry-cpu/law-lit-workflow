@@ -27,7 +27,7 @@
 | P4 单篇精读 | paper-reading（法学适配，规模化时并行子代理） | `reading/cards/*.md` |
 | P5 综合归纳 | multi-document-summarization | `synthesis/综合摘要.md` |
 | P6 证据映射 | literature-review（硬门控） | `plan/evidence-map.md` |
-| P7 写作 | literature-review / writing-law / paper-orchestration 等 | 草稿 `.md` |
+| P7 写作 | literature-review / writing-law / paper-orchestration ＋ antidefensivewriting / law-paper-opening-ending（按需） | 草稿 `.md` |
 | P8 引注规范化 | csl-citation ＋ `scripts/citecheck.py` | 定稿 `.md` |
 | P9 产出 Word | docx-official ＋ `scripts/md2docx.py`（真页下注） | `output/*.docx` |
 | **P9.4 去 AI 味＋版式清理** | legal-paper-framework-humanizer-zh ＋ `scripts/stripbold.py` | **另存 `output/*_去AI味版.*`（不覆盖原稿）** |
@@ -66,7 +66,10 @@ MiMo Desktop 用户的 `$MIMO_PYTHON` 已预装 docx 组，只需另装 `markitd
 
 **配套技能**（本工作流编排的对象，按需安装）
 
-brainstorming-research、paper-reading、multi-document-summarization、literature-review、writing-law、humanities-thesis、paper-orchestration、csl-citation、docx-official、legal-paper-framework-humanizer-zh
+brainstorming-research、paper-reading、multi-document-summarization、literature-review、writing-law、humanities-thesis、paper-orchestration、csl-citation、docx-official、legal-paper-framework-humanizer-zh、antidefensivewriting、law-paper-opening-ending
+
+> 最后两个为**按需**技能：其核心要求（结论铁律、人称与自限语句、首尾结构要点）已内嵌 SKILL.md 的 P7 通用约束，
+> 装不到也不影响流程运行，缺的只是完整版细则。
 
 ## 安装
 
@@ -113,6 +116,16 @@ cp -r law-lit-workflow/skills/law-lit-workflow <你的项目>/.mimocode/skills/
 - 想改白名单、年份阈值（默认 2021 至今）、放宽阈值（默认 <8 篇）：直接编辑 `SKILL.md` 对应段落。
 
 ## 更新记录
+
+**2026-10-09 修订**
+
+- **P7 新增「通用约束」（综述线与论文线都适用）**：防御性写作（主张须有证据、不虚构、删防御性空话）、
+  结论写作铁律（连贯段落收拢为一两个核心命题、禁止分点罗列、不复述摘要与正文）、
+  开头与结尾写作（五步漏斗／三段式、首尾锚点成对）、人称与自限语句（观点宣告式第一人称 ≤3 处、纯客套语零容忍）。
+- **`papercheck.py` 升级**：新增结论章分点罗列检测、结论与摘要 ≥14 字／与正文 ≥20 字连续雷同检测、
+  第一人称与客套语计数，全部纳入 P9.5 硬门控。
+- 冲突裁决新增 3 条（第 6–8 条）：写作约束分工、首尾写作分工、人称与自限语句的覆盖关系。
+- 配套技能清单补充 `antidefensivewriting`、`law-paper-opening-ending`（按需安装；核心规则已内嵌 P7，缺失不影响运行）。
 
 **2026-10-08 修订版**
 
