@@ -4,7 +4,7 @@
 
 一条触发语跑完整条流水线；内置法学期刊白名单、多技能编排规则、9 个配套脚本、一套自检脚本与样例夹具。
 
-> **本版为 2026-10-08 修订版**：相较初版（只有一份 SKILL.md）增加了页码锚点、去 AI 味与版式清理、交付校验三个阶段，随包 9 个脚本与自检脚本，并修正了登录探测、PDF 存放等若干会让人踩坑的规则。差异见文末「更新记录」。
+> **本版为 2026-10-17 修订**：P2 阶段接入 **cnki-dl**（知网 PDF 批量下载 MCP），与 cnki-mcp 检索、Zotero 挂载组成一条龙；知网文献获取渠道优先级同步更新。上一版（2026-10-08）增加了页码锚点、去 AI 味与版式清理、交付校验三个阶段。差异见文末「更新记录」。
 
 ## 解决什么问题
 
@@ -21,7 +21,7 @@
 |------|--------|--------|
 | P0 选题确认 | brainstorming-research ＋ humanities-thesis | `plan/project-overview.md` 等 |
 | P1 检索 | 知网 MCP ＋ 期刊白名单 | `plan/literature-search.md`（候选表，用户筛选） |
-| P2 入库与全文 | Zotero MCP（PDF 由用户经 Connector 下载） | Zotero 条目＋附件；`plan/sources.md` |
+| P2 入库与全文 | cnki-dl（知网 PDF 下载）＋ Zotero MCP（挂附件）＋ Connector/用户交回兜底 | Zotero 条目＋附件；`plan/sources.md` |
 | P3 转 Markdown | `scripts/mdconvert.py` | `reading/*.md` |
 | **P3.5 页码锚点** | `scripts/pdfpages.py` | **`reading/paged/*.md`（精读主源）** |
 | P4 单篇精读 | paper-reading（法学适配，规模化时并行子代理） | `reading/cards/*.md` |
@@ -116,6 +116,16 @@ cp -r law-lit-workflow/skills/law-lit-workflow <你的项目>/.mimocode/skills/
 - 想改白名单、年份阈值（默认 2021 至今）、放宽阈值（默认 <8 篇）：直接编辑 `SKILL.md` 对应段落。
 
 ## 更新记录
+
+**2026-10-17 修订**
+
+- **P2 接入 cnki-dl（知网 PDF 批量下载）**：独立 MCP 服务器 `cnki-dl`，工具 `download_papers`，
+  复用 cnki-mcp 的浏览器登录状态，一次可传多个摘要页 URL 批量下载，默认存 `D:\知网文献\`；
+  下载后仍须立即挂入 Zotero（作者规则不变）。
+- **获取渠道优先级更新**：知网文献首选 cnki-dl 批量下载 → Zotero Connector（元数据更全时用）
+  → 用户浏览器下载交回（兜底）；原"Chrome for Testing 无法打开知网下载界面"的限制由 cnki-dl 绕开。
+- SKILL.md 工具速查新增 `cnki-dl` 小节（URL 来源、登录态复用、失败处理、命令行备用）。
+- 依赖：需另行安装 cnki-dl MCP（独立于本 skill 分发），未安装时工作流自动退回 Connector/用户交回渠道。
 
 **2026-10-09 修订**
 
