@@ -26,7 +26,7 @@ description: 法学文献端到端工作流：知网检索（CLSCI/CSSCI/北大�
 |------|--------|--------|
 | P0 选题确认 | brainstorming-research（对话式，一次一问）＋ humanities-thesis 阶段零 | `plan/project-overview.md`、`plan/outline.md`、`plan/progress.md` |
 | P1 检索 | cnki-mcp ＋ 本 skill 期刊白名单 | `plan/literature-search.md`（候选表，用户筛选） |
-| P2 入库与全文 | zotero-mcp ＋ 用户 Connector/丢 PDF | Zotero 条目+附件；`plan/sources.md`（D编号↔Zotero key↔PDF路径↔MD路径） |
+| P2 入库与全文 | cnki-dl（知网 PDF 下载）＋ zotero-mcp（挂附件）＋ 用户 Connector/丢 PDF 兜底 | Zotero 条目+附件；`plan/sources.md`（D编号↔Zotero key↔PDF路径↔MD路径） |
 | P3 转 Markdown | `mdconvert.py`（系统 Python） | `reading/D编号_短题名.md` |
 | **P3.5 页码锚点** | `pdfpages.py`（**$MIMO_PYTHON**） | **`reading/paged/D编号_*.md`（精读主源）** |
 | P4 单篇精读 | paper-reading（法学适配，见下） | `reading/cards/D编号_精读卡.md` |
@@ -430,6 +430,21 @@ P9.5 之所以排在它后面，是因为去 AI 味会改动字数与措辞、�
   连续超时多属排队现象，此时**重复调 `login` 只会加剧排队**。
 - **`keywords` 参数弃用**（见 P1 第 2 步）。
 
+### cnki-dl（知网 PDF 下载，P2 阶段主力）
+
+- 工具名 `download_papers`（服务器名 `cnki-dl`），参数 `urls`（摘要页 URL 列表）与 `out_dir`（可选）。
+- **与 cnki-mcp 的关系**：cnki-mcp 只检索不下载；cnki-dl 复用 cnki-mcp 的浏览器登录状态
+  （`C:\Users\李宗耀\.cnki-mcp` 档案），**无需单独 login**——cnki-mcp 探路成功后即可直接用。
+- URL 来源：P1 候选表 `plan/literature-search.md` 的"链接"列，或检索结果里的
+  `https://kns.cnki.net/kcms2/article/abstract?v=...`。
+- 默认保存到 `D:\知网文献\`，文件名"标题_作者.pdf"；下载时会短暂弹出浏览器窗口，
+  若弹出安全验证须请用户在窗口中完成。
+- **一次调用可传多个 URL**（工具内部每篇间隔 5 秒）；单篇失败不中断批次，按返回报告核对。
+- 下载完成后必须立刻挂 Zotero（见下方「PDF 的获取、存放与读取」），不得让 PDF 只留在下载目录。
+- 登录态过期表现：页面跳"安全验证"且用户完成后仍失败 → 让用户重新 `cnki-mcp_login` 后重试。
+- 手动命令行备用：
+  `"D:\知网文献\_scripts\cnki-downloader\.venv\Scripts\python.exe" "D:\知网文献\_scripts\cnki-downloader\download.py" <URL...>`
+
 ### zotero-mcp
 
 - 工具名带 `zotero-mcp_` 前缀；**Zotero 必须开着**（关掉则调用报 fetch failed，重开约 2 秒恢复，无需重启引擎）。
@@ -445,7 +460,7 @@ P9.5 之所以排在它后面，是因为去 AI 味会改动字数与措辞、�
 - **作者规则（2026-10-08 确认）：整个工作流全程只从 Zotero 文件库读取 PDF；
   不得把 PDF 复制进项目文件夹**（`reading\pdf\` 之类的副本一律不要）。
   项目里只保留**派生物**：`reading\*.md`（转 MD）与 `reading\paged\*.md`（页码锚点）。
-- **任何来源的 PDF（Connector 下载／用户交回／聊天临时补给），到手第一件事是挂进 Zotero 对应条目**：
+- **任何来源的 PDF（cnki-dl 下载／Connector 下载／用户交回／聊天临时补给），到手第一件事是挂进 Zotero 对应条目**：
   `zotero-mcp_write_item action=import + parentItemKey + filePath`，
   然后**立即用 `zotero-mcp_get_item_details` 回查 `attachments[].path`**——
   之后 P3／P3.5 一律从这个路径读 PDF。
@@ -454,9 +469,12 @@ P9.5 之所以排在它后面，是因为去 AI 味会改动字数与措辞、�
 - **找 PDF 先查 Zotero**：`zotero-mcp_search_library` 定位条目 → `attachments[].path` 给出绝对路径。
   **不要猜文件夹，也不要去聊天临时路径找**——按作者规则，那里不是存放位置。
 - **工作流完成后的修改**：由操作者自己另行提供文件（放哪里由操作者指定），工作流不主动复制或移动。
-- 获取渠道：首选 Zotero Connector 下载（元数据更全、能补齐 cnki-mcp 给不出的页码），
-  其次由用户在浏览器下载后交回或聊天补给；Chrome for Testing 实测无法打开知网下载界面、
-  无法装 Connector，别尝试。
+- 获取渠道（2026-10-17 更新）：
+  ①**知网文献首选 `cnki-dl` 批量下载**（P1 用户确认候选表后，拿链接列调 `download_papers`，
+  到手后立即挂 Zotero）；②Zotero Connector（元数据通常更全、能补齐 cnki-mcp 给不出的页码，
+  适合对元数据质量要求高的场合，注意 Connector 会新建条目防重复）；③用户在浏览器下载后交回或
+  聊天补给（兜底）。Chrome for Testing 实测无法打开知网下载界面、无法装 Connector，别尝试；
+  cnki-dl 用独立浏览器档案绕开了这一限制。
 - 存在"用户浏览器登录知网 ↔ 检索浏览器登录态"互踢风险：靠 P1 的**探测登录提醒**兜底。
 
 ### 文件与渲染的常见坑
