@@ -117,6 +117,24 @@ cp -r law-lit-workflow/skills/law-lit-workflow <你的项目>/.mimocode/skills/
 
 ## 更新记录
 
+**2026-10-29 修订（两轮完整执行实测）**
+
+- **P9 新增「WPS 交叉引用 8 步手册」**：正文引注与文末参考文献互相跳转必须用 WPS 原生功能——
+  自动编号（`ListFormat.ApplyNumberDefault()`，格式 `[1]` 用 `lvl.NumberFormat = '[%1]'`）→ 书签 → 
+  `doc.Fields.Add(rng, 3, 'ref1 \n \h', False)` 插 wdFieldRef 域。要点：域代码**不能带 REF 前缀**（type=3 会自动加）；
+  `\n`（显示编号）与 `\h`（Ctrl+点击跳转）**缺一不可**；**先 `Fields.Update()` 再设上标**（顺序反了上标被吃掉）；
+  **定位 [n] 必须用 `Find.Execute` 不能用 Python 偏移量**（两套计数规则不一致，实测把 [2] 插进"消费者"中间）；
+  Find 替换要**先收集位置、从后往前**防死循环；WPS COM 长操作后可能崩溃，先 `Stop-Process -Name wps` 清理。
+- **P3 新增「中文标点预处理规则」**：写正文时直接使用中文标点（，。；：？！""），不要先写英文标点再事后转换
+  （事后转换极易漏项——首轮漏了双引号，全文残留 88 个英文直引号；且转换脚本本身可能引入新错误）。
+- **P3 新增 `.doc` 转换**：markitdown 读不了老 `.doc`，先 `$MIMO_SOFFICE --convert-to docx` 再读。
+- **P9.4 新增实测坑**：`1. **小标题**。正文...` 这类行整行 `bold=True` 会把正文也加粗，须分离标题段与正文段；
+  正文提取正则 `## 一、问题的提出(.*?)## 参考文献` 会把第一章标题本身排除掉，须把标题纳入捕获。
+- **P2 新增 cnki-dl 排坑**：下载报 `WinError 32 文件锁` 时先 `Stop-Process -Name chrome`（浏览器占用档案）；
+  文件名含中文弯引号（""）时 MCP 导入报 `File not found`，先复制为 ASCII 文件名再挂 Zotero。
+- **工具速查新增 PowerShell 5.1 编码坑**：含中文弯引号/正则/复杂管道的命令一律显式调 `pwsh.exe`（PowerShell 7），
+  或写成 `.py` 文件执行；`python -c` 内嵌中文弯引号必报 ParserError。
+
 **2026-10-17 修订**
 
 - **P2 接入 cnki-dl（知网 PDF 批量下载）**：独立 MCP 服务器 `cnki-dl`，工具 `download_papers`，
