@@ -103,6 +103,10 @@ description: 法学文献端到端工作流：知网检索（CLSCI/CSSCI/北大�
 
 - **输入 PDF 来自 Zotero 附件路径**（`attachments[].path`，见速查「PDF 的获取、存放与读取」）——
   不要从项目文件夹或聊天临时路径读。
+- **写正文时直接使用中文标点**（，。；：？！""），不要先写英文标点再事后转换——
+  事后转换极易漏项（引号、括号等），且转换脚本本身可能引入新错误（2026-10-29两轮实测教训）。
+- **`.doc` 老格式 markitdown 读不了**：先用 LibreOffice 转 `.docx` 再读
+  （`$MIMO_SOFFICE --headless --convert-to docx --outdir <目录> <文件.doc>`）。
 - **只用** `mdconvert.py`（项目已装，别默认 markitdown 直喂；输出必须 UTF-8，用 `-o` 不用 PowerShell `>`）。
 - **须用系统 Python 3.12 运行**（它装了 markitdown；`$MIMO_PYTHON` 没有）。转换后先合并断行、剔除页码。
 - 登记 `reading/` 路径到 `plan/sources.md`。
@@ -250,6 +254,17 @@ description: 法学文献端到端工作流：知网检索（CLSCI/CSSCI/北大�
 ## P9 产出 Word
 
 - 加载 **docx-official** 获取中文字体槽、版式与页边距惯例。
+- **交叉引用（2026-10-29两轮实测整合版）**：正文引注需与文末参考文献互相跳转时，**必须用 WPS 原生功能**，不要手动拼 XML。完整操作步骤：
+  ① 参考文献条目先用 WPS 自动编号统一标号（`ListFormat.ApplyNumberDefault()`，格式 `[1]` 用 `lvl.NumberFormat = '[%1]'`）；
+  ② 每条文献加书签（`doc.Bookmarks.Add('ref1', rng)`）；
+  ③ 正文 `[n]` 用 `doc.Fields.Add(rng, 3, 'ref1 \n \h', False)` 插 **wdFieldRef 域**。**域代码不能带 `REF` 前缀**——`Fields.Add` type=3 会自动加 `REF`，带前缀会变成 `REF REF ref1` 报错；
+  ④ REF 域参数 `\n`（只显示编号）+ `\h`（Ctrl+点击跳转）**缺一不可**：只写 `\h` 会显示整段文字而不是编号；
+  ⑤ **先 `doc.Fields.Update()`，再设 `field.Result.Font.Superscript = True`**——顺序反了上标会被域更新吃掉；
+  ⑥ **定位 [n] 必须用 `Find.Execute`，不能用 Python 字符串偏移量**——Python 索引与 WPS Range.Start 的计数规则不一致（隐藏字符、域代码等导致偏移），实测会把 [2] 插进"消费者"中间、把 [4] 插进"罚过相当"中间、文字被截断；
+  ⑦ **Find.Execute 替换要防死循环**：替换后的域结果显示 `[1]` 会再次被找到 → 正确做法是先收集所有 `[n]` 位置（`(start, end, n)` 元组），排序后**从后往前**替换；
+  ⑧ WPS COM 长时间操作后进程可能崩溃（`服务器出现意外情况`）→ 重新生成前先 `Stop-Process -Name wps,winword -Force`。
+  手动插 `w:fldSimple`/`w:hyperlink` 均不可靠，WPS 交叉引用对话框里找不到对应项。
+- **Word 用系统 Python 跑（`python`），不用 `$MIMO_PYTHON`**——WPS COM 自动化需要 `pywin32`，`$MIMO_PYTHON` 没有。
 - **注意：python-docx 与 docx-official 均不支持脚注。** 凡要求"页下注／真脚注"，
   必须用**本技能自带** `<本技能目录>\scripts\md2docx.py` 注入 `word/footnotes.xml`
   ——需同时改 `[Content_Types].xml`、`word/_rels/document.xml.rels`、正文 `w:footnoteReference`，
@@ -293,6 +308,11 @@ P9.5 之所以排在它后面，是因为去 AI 味会改动字数与措辞、�
 | **正文不该加粗而加粗** | 仅文题、章／节标题（黑体）、`摘要：`／`关键词：` 两个标签可加粗 | 正文一律不加粗。**段内小标题（「其一，…」「在规范层面，…」）也属正文，同样不加粗** → 跑 `scripts\stripbold.py`（自动保留那两个标签），再重跑 `md2docx.py` |
 | **标题标蓝** | 章／节标题须为**黑色** | python-docx 默认 Heading 样式带主题蓝；`md2docx.py` 已内置 `RGBColor(0,0,0)`。手工用 WPS／Word 改过文档后若标题变蓝，**回脚本重出，不要手工逐条改** |
 | `**` 被当字面字符打印 | — | Markdown 里写了 `**…**` 而转换未解析时会原样打出。**改稿不要在正文随手加 `**`**；已加的先跑 `stripbold.py` |
+
+> **2026-10-29 实测补充（加粗与标点）**：
+> - markdown 中 `1. **小标题**。正文文字...` 这类行如果整行 `bold=True`，小标题后面的正文也会被加粗。生成 docx 时必须**分离标题段和正文段**：标题部分用黑体小四 `bold=False`（黑体自带笔画粗细），正文用宋体小四 `bold=False`。
+> - 中文正文的英文标点转换必须包含**双引号**：逗号/句号/分号/冒号/问号/感叹号之外，`"` 直引号也要成对转 `""`（U+201C/U+201D，奇数为左、偶数为右），漏掉引号会导致全文残留英文双引号。
+> - 从 markdown 提取正文时用 `re.search(r'## 一、问题的提出(.*?)## 参考文献')` 会把第一章标题本身排除掉——必须把标题纳入捕获：`re.search(r'(## 一、问题的提出.*?)## 参考文献')`。
 
 **验收方式唯一可靠的是渲染看图**：转 PDF → `pypdfium2_cli render` → Read 逐页看。
 上述三类**纯文本检查看不出来**——本次实测的三处缺陷（`**` 字面、标题蓝色、脚注跑到文末）全部靠看图才发现。
@@ -442,6 +462,9 @@ P9.5 之所以排在它后面，是因为去 AI 味会改动字数与措辞、�
 - **一次调用可传多个 URL**（工具内部每篇间隔 5 秒）；单篇失败不中断批次，按返回报告核对。
 - 下载完成后必须立刻挂 Zotero（见下方「PDF 的获取、存放与读取」），不得让 PDF 只留在下载目录。
 - 登录态过期表现：页面跳"安全验证"且用户完成后仍失败 → 让用户重新 `cnki-mcp_login` 后重试。
+**实测坑（2026-10-29）**：
+- **下载报 `WinError 32 文件锁`** → cnki-mcp 的 Chrome 进程占着浏览器档案，先 `Stop-Process -Name chrome -Force` 再下载。
+- **文件名含弯引号（""）或特殊符号** → MCP 的 `write_item action=import` 报 `File not found`，先把 PDF 复制为 ASCII 文件名再导入 Zotero。
 - 手动命令行备用：
   `"D:\知网文献\_scripts\cnki-downloader\.venv\Scripts\python.exe" "D:\知网文献\_scripts\cnki-downloader\download.py" <URL...>`
 
@@ -483,7 +506,14 @@ P9.5 之所以排在它后面，是因为去 AI 味会改动字数与措辞、�
   （自动保留「摘要：」「关键词：」两个标签）。
 - **文件被 WPS/预览面板占用**会 `PermissionError`：先查 `Get-Process wps/winword`，等用户关掉再写，
   不要覆盖用户已打开编辑的内容；另存副本或等锁释放。
-- PowerShell 读 UTF-8 文件用 `Get-Content -Encoding UTF8`，**别用裸 `Get-Content`（GBK 会乱码、行数不可信）**；
+- **PowerShell 5.1 引号与正则坑（2026-10-29 重申）**：凡命令含中文弯引号（""）、正则表达式（`\d+` 等）
+或复杂管道，**一律显式调 `%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe`（PowerShell 7）**，
+不要用默认的 PS 5.1——它会吞掉弯引号报 `ParserError`、把正则当模块名。无法避免时，把代码写成 `.py` 文件再执行。
+- **WPS COM 进程崩溃（2026-10-29二轮实测）**：长时间 COM 操作后 WPS 可能抛 `服务器出现意外情况`——
+  脚本开头先 `Stop-Process -Name wps,winword -Force` 清理残留进程再操作。
+- **验证脚本自身也可能有 bug**：检测"标题缺失/存在"等结论时，先确认检测逻辑本身没写错
+  （如用 `in_body` 标记判断正文段落时，封面字段含标题文字会误触发）——宁可先肉眼核对文档段落结构再下结论。
+PowerShell 读 UTF-8 文件用 `Get-Content -Encoding UTF8`，**别用裸 `Get-Content`（GBK 会乱码、行数不可信）**；
   也不要写 Python 输出到文件时用 `>`（会 UTF-16）。
 - 换行后脚本路径带中文时，`python -c "...中文..."` 容易触发 PowerShell parser error，**改写成脚本文件再跑**。
 
