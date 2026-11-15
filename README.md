@@ -27,7 +27,7 @@
 | P4 单篇精读 | paper-reading（法学适配，规模化时并行子代理） | `reading/cards/*.md` |
 | P5 综合归纳 | multi-document-summarization | `synthesis/综合摘要.md` |
 | P6 证据映射 | literature-review（硬门控） | `plan/evidence-map.md` |
-| P7 写作 | literature-review / writing-law / paper-orchestration ＋ antidefensivewriting / law-paper-opening-ending（按需） | 草稿 `.md` |
+| P7 写作 | literature-review / writing-law / paper-orchestration ＋ anti-defensive-writing / law-paper-opening-ending（按需） | 草稿 `.md` |
 | P8 引注规范化 | csl-citation ＋ `scripts/citecheck.py` | 定稿 `.md` |
 | P9 产出 Word | docx-official ＋ `scripts/md2docx.py`（真页下注） | `output/*.docx` |
 | **P9.4 去 AI 味＋版式清理** | legal-paper-framework-humanizer-zh ＋ `scripts/stripbold.py` | **另存 `output/*_去AI味版.*`（不覆盖原稿）** |
@@ -66,7 +66,7 @@ MiMo Desktop 用户的 `$MIMO_PYTHON` 已预装 docx 组，只需另装 `markitd
 
 **配套技能**（本工作流编排的对象，按需安装）
 
-brainstorming-research、paper-reading、multi-document-summarization、literature-review、writing-law、humanities-thesis、paper-orchestration、csl-citation、docx-official、legal-paper-framework-humanizer-zh、antidefensivewriting、law-paper-opening-ending
+brainstorming-research、paper-reading、multi-document-summarization、literature-review、writing-law、humanities-thesis、paper-orchestration、csl-citation、docx-official、legal-paper-framework-humanizer-zh、anti-defensive-writing、law-paper-opening-ending
 
 > 最后两个为**按需**技能：其核心要求（结论铁律、人称与自限语句、首尾结构要点）已内嵌 SKILL.md 的 P7 通用约束，
 > 装不到也不影响流程运行，缺的只是完整版细则。
@@ -116,6 +116,19 @@ cp -r law-lit-workflow/skills/law-lit-workflow <你的项目>/.mimocode/skills/
 - 想改白名单、年份阈值（默认 2021 至今）、放宽阈值（默认 <8 篇）：直接编辑 `SKILL.md` 对应段落。
 
 ## 更新记录
+
+**2026-11-16 修订（写作约束技能替换）**
+
+- **P7 的写作约束技能由 `antidefensivewriting` 换为 `anti-defensive-writing`**（学术写作发布会原则版），
+  SKILL.md 与 README 的配套技能清单同步更名；其余阶段、门控、脚本一律未动。
+- **证据完整性改由本流程自负**：新技能只讲叙事组织与语气，不再包含"主张须有证据、不虚构、
+  来源矛盾须指出"，故该条在 P7 通用约束中改写为本流程的硬约束（原文照旧保留），
+  并在冲突裁决第 6 条注明"不依赖该 skill"。
+- **新增法学场域限制（冲突裁决第 6 条）**：新技能的"打不过的维度不设为比赛""不占优的结果不说输"
+  面向以指标竞争为主的学科；法学论文中通说与反对说必须并列（P6 的【争议】项）、不利判例与法条必须正面处理、
+  适用边界必须交代，不得借"不主动示弱"省略；其"允许彻底重构故事"不得改变既有文献立场与裁判事实。
+- 引用位置按新技能实际结构校准：§一叙事规则、§二语言规则、§六交稿前自查（旧技能为"终稿审计"，
+  名称在原文中并不存在）。`tests\skilltest.py` 19 项全部通过。
 
 **2026-10-29 修订（两轮完整执行实测）**
 
