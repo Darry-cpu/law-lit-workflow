@@ -146,7 +146,7 @@ def main():
             f"自限句最多一句且须具体")
 
     print(f"正文汉字数（不含标题/摘要/关键词/脚注）：{han}")
-    print(f"摘要长度（含标点，按字符计）：{len(abstract)}  要求 ≤300  {'OK' if len(abstract) <= 300 else '超限'}")
+    print(f"摘要长度（含标点，按字符计）：{len(abstract)}  要求 300～400  {'OK' if len(abstract) <= 400 else '超限'}")
     print(f"关键词：{keywords}  （{len(re.split(r'[；;]', keywords))} 个）")
     print(f"脚注标记数（正文中）：{len(nums)}")
     print(f"脚注定义数：{len(defs)}")
