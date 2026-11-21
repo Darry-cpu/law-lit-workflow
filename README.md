@@ -5,6 +5,8 @@
 一条触发语跑完整条流水线；内置法学期刊白名单、多技能编排规则、9 个配套脚本、一套自检脚本与样例夹具。
 
 > **本版为 2026-11-21 修订**：P7 新增「摘要与关键词写作」，以 `law-abstract-writing` 为权威（四步公式、零自我指称禁语、篇幅 300～400 字／学位 ≤500）；`papercheck.py` 摘要上限同步调整。上一版（2026-11-16）替换写作约束技能。差异见文末「更新记录」。
+>
+> **本版再修订（2026-11-21，三技能整合）**：P0 新增四问过滤选题硬门槛（真实存在／尚未解决／有研究价值／现在能完成）；P1 新增检索日志（可复现）；P7 新增「规范位阶与目的役使」「段首定理与标题标准」两条论证结构约束，并新增**线 C 实证论文（经验研究设计线）**，以 `legal-empirical-research-agent` 为权威约束层；P9.5 新增结构级质检（四问回头看）与投稿前五查。另：SKILL.md 内本机实测路径已脱敏为 `<user>` / `<数据盘>` 占位符。
 
 ## 解决什么问题
 
@@ -19,7 +21,7 @@
 
 | 阶段 | 执行者 | 产出物 |
 |------|--------|--------|
-| P0 选题确认 | brainstorming-research ＋ humanities-thesis | `plan/project-overview.md` 等 |
+| P0 选题确认 | brainstorming-research ＋ humanities-thesis ＋ 四问过滤（选题硬门槛） | `plan/project-overview.md` 等 |
 | P1 检索 | 知网 MCP ＋ 期刊白名单 | `plan/literature-search.md`（候选表，用户筛选） |
 | P2 入库与全文 | cnki-dl（知网 PDF 下载）＋ Zotero MCP（挂附件）＋ Connector/用户交回兜底 | Zotero 条目＋附件；`plan/sources.md` |
 | P3 转 Markdown | `scripts/mdconvert.py` | `reading/*.md` |
@@ -27,11 +29,11 @@
 | P4 单篇精读 | paper-reading（法学适配，规模化时并行子代理） | `reading/cards/*.md` |
 | P5 综合归纳 | multi-document-summarization | `synthesis/综合摘要.md` |
 | P6 证据映射 | literature-review（硬门控） | `plan/evidence-map.md` |
-| P7 写作 | literature-review / writing-law / paper-orchestration ＋ anti-defensive-writing / law-paper-opening-ending（按需） | 草稿 `.md` |
+| P7 写作 | 综述线 / 论文线 / 实证线（线 C 加载 legal-empirical-research-agent）＋ writing-law / paper-orchestration ＋ anti-defensive-writing / law-paper-opening-ending（按需） | 草稿 `.md` |
 | P8 引注规范化 | csl-citation ＋ `scripts/citecheck.py` | 定稿 `.md` |
 | P9 产出 Word | docx-official ＋ `scripts/md2docx.py`（真页下注） | `output/*.docx` |
 | **P9.4 去 AI 味＋版式清理** | legal-paper-framework-humanizer-zh ＋ `scripts/stripbold.py` | **另存 `output/*_去AI味版.*`（不覆盖原稿）** |
-| **P9.5 交付校验** | `scripts/papercheck.py`／`citecheck.py`／`docxcheck.py` ＋ 渲染看图 | 校验通过记录 |
+| **P9.5 交付校验** | `scripts/papercheck.py`／`citecheck.py`／`docxcheck.py` ＋ 渲染看图 ＋ 四问回头看/投稿前五查（人工结构质检） | 校验通过记录 |
 
 ## 前置依赖
 
@@ -67,6 +69,8 @@ MiMo Desktop 用户的 `$MIMO_PYTHON` 已预装 docx 组，只需另装 `markitd
 **配套技能**（本工作流编排的对象，按需安装）
 
 brainstorming-research、paper-reading、multi-document-summarization、literature-review、writing-law、humanities-thesis、paper-orchestration、csl-citation、docx-official、legal-paper-framework-humanizer-zh、anti-defensive-writing、law-paper-opening-ending
+
+**三技能整合（2026-11-21）**：本工作流的增量已吸收 `legal-academic-writing-agent`（规范写作全流程）与 `legal-research-and-writing`（检索精读基础设施）两技能的要点；`legal-empirical-research-agent`（法学经验研究设计）作为**线 C 实证论文的权威约束层**被引用，见配套仓库 `legal-skill-collection`。
 
 > 最后两个为**按需**技能：其核心要求（结论铁律、人称与自限语句、首尾结构要点）已内嵌 SKILL.md 的 P7 通用约束，
 > 装不到也不影响流程运行，缺的只是完整版细则。
@@ -117,6 +121,17 @@ cp -r law-lit-workflow/skills/law-lit-workflow <你的项目>/.mimocode/skills/
 
 ## 更新记录
 
+**2026-11-21 再修订（三技能整合）**
+
+- **P0 新增四问过滤选题硬门槛**（门控 1 扩充）：真实存在吗／尚未解决吗／有研究价值吗／现在能完成吗，四项全过方可进入 P1。
+- **P1 新增检索日志（步骤 8）**：候选表之外记录研究问题／检索串／数据库／执行日期／纳入排除标准／种子文献，保证检索可复现。
+- **P7 通用约束新增两条**：第六「规范位阶与目的役使」（位阶顺位法则 + 每处引用须回答为哪个观点服务）、第七「段首定理与标题标准」（段首亮论断、杜绝"第一节 现状"式空洞标题）。
+- **P7 新增线 C：实证论文（经验研究设计线）**：选题经验化重构 → 理论契合度检查 → 分析框架三自检 → 数据操作化（选择偏差声明／文本未提及≠不存在／代理变量强制披露／编码信度 kappa≥0.7）→ 方法适配与前提核查 → 稳健性检验（强制）；加载 `legal-empirical-research-agent` 为权威约束层。
+- **P9.5 新增结构级质检与投稿前五查**：四问回头看（问题聚焦度／结构必要性／论据充分性／回应完整性）＋ 法条时效／案号认证／语境限定／二手引证／人工放行，属脚本查不了的人工项，同为门控 4。
+- **冲突裁决新增第 10、11 条**：论证结构约束与表达力度／法学文体分层；实证线分工与硬约束。
+- **SKILL.md 本机实测路径脱敏**：`C:\Users\<user>` / `<数据盘>` 占位符。
+- `tests\skilltest.py` 19 项全部通过（含脱敏后复测）。
+
 **2026-11-21 修订（摘要与关键词写作）**
 
 - **P7 通用约束新增第五项「摘要与关键词写作」**（论文线与综述线通用）：以 `law-abstract-writing` 技能为权威——摘要只写四步（提出规范/司法难题 → 交代研究方法 → 阐释核心分析思路 → 给出结论与完善建议），禁语铁律（摘要中零自我指称，覆盖 P7 人称条款的路标句例外），篇幅 300～400 字（学位论文 ≤500），关键词 3～5 个且可溯源；三型态模板与范文拆解以该技能为准。
@@ -157,7 +172,7 @@ cp -r law-lit-workflow/skills/law-lit-workflow <你的项目>/.mimocode/skills/
 **2026-10-17 修订**
 
 - **P2 接入 cnki-dl（知网 PDF 批量下载）**：独立 MCP 服务器 `cnki-dl`，工具 `download_papers`，
-  复用 cnki-mcp 的浏览器登录状态，一次可传多个摘要页 URL 批量下载，默认存 `D:\知网文献\`；
+  复用 cnki-mcp 的浏览器登录状态，一次可传多个摘要页 URL 批量下载，默认存 `<数据盘>\知网文献\`；
   下载后仍须立即挂入 Zotero（作者规则不变）。
 - **获取渠道优先级更新**：知网文献首选 cnki-dl 批量下载 → Zotero Connector（元数据更全时用）
   → 用户浏览器下载交回（兜底）；原"Chrome for Testing 无法打开知网下载界面"的限制由 cnki-dl 绕开。
